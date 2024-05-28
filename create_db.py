@@ -1,7 +1,5 @@
 from sqlmodel import SQLModel
-from models import Book
+from models import *
 from database import engine
-
-print("CREATING DATABASE.....")
 
 SQLModel.metadata.create_all(engine)
