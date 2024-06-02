@@ -17,7 +17,8 @@ session = Session(bind=engine)
 
 @app.get('/', response_model=teacher, tags=['Pages'])
 async def get_all_teacher(request: Request):
-    statement = select(teacher)
+    
+    statement = select(advt).where(advt.t_id != None)
     result = session.exec(statement).all()
 
     if result == None:
@@ -26,6 +27,22 @@ async def get_all_teacher(request: Request):
     return templates.TemplateResponse(
         request=request,
         name='index.html',
+        context={
+            'result': result,
+        }
+    )
+    
+@app.get('/teacher', response_model=teacher, tags=['Pages'])
+async def get_all_students(request: Request):
+    statement = select(advt).where(advt.s_id != None)
+    result = session.exec(statement).all()
+
+    if result == None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    return templates.TemplateResponse(
+        request=request,
+        name='teacher.html',
         context={
             'result': result
         }
@@ -49,8 +66,6 @@ async def get_a_teacher(request: Request, teacher_id: int):
             'surname': result.surname,
             'email': result.email,
             'phone_number': result.phone_number,
-            'discord_username': result.discord_username,
-            'area_of_training': result.area_of_training,
             'average_rating': result.average_rating
         }
     )
@@ -58,21 +73,73 @@ async def get_a_teacher(request: Request, teacher_id: int):
 
 @app.get('/login', tags=['Pages'])
 async def get_login_page(request: Request):
-    cookie = request.cookies.get('id')
+    s_cookie = request.cookies.get('student_id')
+    t_cookie = request.cookies.get('teacher_id')
 
-    if cookie != None:
-        return RedirectResponse('/profile/' + cookie, status_code=302)
+    if s_cookie != None:
+        return RedirectResponse('/profile/student/' + s_cookie, status_code=302)
+    elif t_cookie != None:
+        return RedirectResponse('/profile/teacher/' + t_cookie, status_code=302)
 
     return templates.TemplateResponse('login.html', {'request': request})
 
 
 @app.get('/registration', tags=['Pages'])
 async def get_registration_page(request: Request):
-    return templates.TemplateResponse('registration.html', {'request': request})
+    return templates.TemplateResponse('registration.html', {'request': request,})
+
+@app.get('/advt_card/{advt_id}', tags=['Pages'])
+async def get_registration_page(request: Request, advt_id: int):
+    
+    statement = select(advt).where(advt.id == advt_id)
+    result = session.exec(statement).first()
+    
+    t_statement = select(teacher).where(teacher.id == result.t_id)
+    t_result = session.exec(t_statement).first()
+    
+    s_statement = select(student).where(student.id == result.s_id)
+    s_result = session.exec(s_statement).first()
+    
+    return templates.TemplateResponse(
+        request=request,
+        name='advt_card.html',
+        context={
+            'title': result.title,
+            'sub': result.sub,
+            'desc': result.desc,
+            's_result': s_result,
+            't_result': t_result
+        }
+    )
+
+@app.get('/advt', tags=['Pages'])
+async def get_advt_page(request: Request):
+    s_cookie = request.cookies.get('student_id')
+    t_cookie = request.cookies.get('teacher_id')
+    
+    if s_cookie == None and t_cookie == None:
+        return RedirectResponse('/login', status_code=302)
+
+    return templates.TemplateResponse('advt.html', {'request': request})
 
 
-@app.get('/profile/{student_id}', response_model=student, tags=['Pages'])
-async def get_profile(request: Request, student_id: int):
+
+@app.post('/advt', status_code=status.HTTP_201_CREATED,
+          response_class=RedirectResponse)
+async def create_advt(request: Request, title: str = Form(...),
+                      sub: str = Form(...),
+                      desc: str = Form(...)) -> RedirectResponse:
+    s_cookie = request.cookies.get('student_id')
+    t_cookie = request.cookies.get('teacher_id')
+    new = advt(s_id = s_cookie, t_id = t_cookie, title = title, sub = sub, desc = desc)
+    
+    session.add(new)
+    session.commit()
+
+    return RedirectResponse('/advt_card/' + str(new.id), status_code=302)
+
+@app.get('/profile/student/{student_id}', response_model=student, tags=['Pages'])
+async def get_profile_student(request: Request, student_id: int):
     statement = select(student).where(student.id == student_id)
     result = session.exec(statement).first()
 
@@ -91,16 +158,27 @@ async def get_profile(request: Request, student_id: int):
             'password': result.password
         }
     )
+    
+@app.get('/profile/teacher/{teacher_id}', response_model=teacher, tags=['Pages'])
+async def get_profile_teacher(request: Request, teacher_id: int):
+    statement = select(teacher).where(teacher.id == teacher_id)
+    result = session.exec(statement).first()
 
-@app.post('/teacher', response_model=teacher, status_code=status.HTTP_201_CREATED)
-async def create_a_teacher(teach: Annotated[teacher, Depends()]):
-    new_teach = teacher(id = teach.id, name=teach.name, surname=teach.surname, email=teach.email, phone_number=teach.phone_number, discord_username=teach.discord_username, area_of_training=teach.area_of_training, average_rating=teach.average_rating)
+    if result == None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    session.add(new_teach)
-
-    session.commit()
-
-    return new_teach
+    return templates.TemplateResponse(
+        request=request,
+        name='profile.html',
+        context={
+            'id': result.id,
+            'name': result.name,
+            'surname': result.surname,
+            'email': result.email,
+            'phone_number': result.phone_number,
+            'password': result.password
+        }
+    )
 
 
 @app.post('/registration', status_code=status.HTTP_201_CREATED,
@@ -110,21 +188,44 @@ async def create_a_student(name: str = Form(...),
                             email: str = Form(...),
                             phone_number: str = Form(...),
                             password: str = Form(...),
+                            teacher_check: Optional[bool] = Form(default=False),
                             remember: Optional[bool] = Form(default=False)) -> RedirectResponse:
-    statement = select(student).where(student.email == email or student.phone_number == phone_number)
-    result = session.exec(statement).one_or_none()
-
-    new_student = student(name=name, surname=surname,
+    
+    
+    if teacher_check == True:
+        new = teacher(name=name, surname=surname,
                         email=email, phone_number=phone_number, password=password)
+        statement = select(teacher).where(teacher.email == email or teacher.phone_number == phone_number)
+        result = session.exec(statement).one_or_none()
+        
+        if result == None:
+            session.add(new)
+            session.commit()
+            
+            response = RedirectResponse('/profile/teacher/' + str(new.id), status_code=302)
+            response.delete_cookie('teacher_id')
+            response.delete_cookie('student_id')
+            
+            if remember == True:
+                response.set_cookie(key="teacher_id", value=str(new.id), max_age=15695000)
+            return response
+    else:
+        statement = select(student).where(student.email == email or student.phone_number == phone_number)
+        result = session.exec(statement).one_or_none()
+            
+        new = student(name=name, surname=surname,
+                            email=email, phone_number=phone_number, password=password)
 
-    if result == None:
-        session.add(new_student)
-        session.commit()
-
-        response = RedirectResponse('/profile/' + str(new_student.id), status_code=302)
-        if remember == True:
-            response.set_cookie(key="id", value=str(new_student.id), max_age=15695000)
-        return response
+        if result == None:
+            session.add(new)
+            session.commit()
+                
+            response = RedirectResponse('/profile/student/' + str(new.id), status_code=302)
+            response.delete_cookie('teacher_id')
+            response.delete_cookie('student_id')
+            if remember == True:
+                response.set_cookie(key="student_id", value=str(new.id), max_age=15695000)
+            return response
 
     return RedirectResponse('/registration', status_code=302)
 
@@ -141,14 +242,27 @@ async def get_student(email_login: str = Form(...),
 
     if email_result != None:
         if email_result.id == password_result.id:
-            response = RedirectResponse('/profile/' + str(email_result.id), status_code=302)
+            response = RedirectResponse('/profile/student/' + str(email_result.id), status_code=302)
             if remember == True:
-                response.set_cookie(key="id", value=str(email_result.id), max_age=15695000)
+                response.set_cookie(key="student_id", value=str(email_result.id), max_age=15695000)
             return response
+    else:
+        email_statement = select(teacher).where(teacher.email == email_login)
+        email_result = session.exec(email_statement).first()
+        
+        password_statement = select(teacher).where(teacher.password == password_login)
+        password_result = session.exec(password_statement).first()
+        if email_result != None:
+            if email_result.id == password_result.id:
+                response = RedirectResponse('/profile/teacher/' + str(email_result.id), status_code=302)
+                if remember == True:
+                    response.set_cookie(key="teacher_id", value=str(email_result.id), max_age=15695000)
+                return response
 
 
 @app.get('/profile', tags=['Account'])
 async def switch_account(response: Response):
     response = RedirectResponse('/login', status_code=302)
-    response.delete_cookie('id')
+    response.delete_cookie('teacher_id')
+    response.delete_cookie('student_id')
     return response

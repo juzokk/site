@@ -8,9 +8,8 @@ class teacher(SQLModel, table=True):
     surname: str
     email: str
     phone_number: str
-    discord_username: str
-    area_of_training: int
-    average_rating: float
+    password: str
+    average_rating: float | None = Field(default=5)
 
 class student(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -20,3 +19,10 @@ class student(SQLModel, table=True):
     phone_number: str
     password: str
 
+class advt(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    s_id: Optional[str] = Field(default=None)
+    t_id: Optional[str] = Field(default=None)
+    title: str
+    sub: str
+    desc: str
