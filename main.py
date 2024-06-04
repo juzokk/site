@@ -183,43 +183,50 @@ async def get_profile_teacher(request: Request, teacher_id: int):
 
 @app.post('/registration', status_code=status.HTTP_201_CREATED,
           response_class=RedirectResponse, tags=['Account'])
-async def create_a_student(name: str = Form(...),
-                            surname: str = Form(...),
-                            email: str = Form(...),
-                            phone_number: str = Form(...),
-                            password: str = Form(...),
-                            teacher_check: Optional[bool] = Form(default=False),
-                            remember: Optional[bool] = Form(default=False)) -> RedirectResponse:
-    
-    
+async def create_a_student(request=Request, name: str = Form(...),
+                           surname: str = Form(...),
+                           email: str = Form(...),
+                           phone_number: str = Form(...),
+                           password: str = Form(...),
+                           teacher_check: Optional[bool] = Form(default=False),
+                           remember: Optional[bool] = Form(default=False)) -> RedirectResponse:
+    t_check = select(teacher).where(teacher.email == email and teacher.phone_number == phone_number)
+    s_check = select(student).where(student.email == email and student.phone_number == phone_number)
+
+    t_check_result = session.exec(t_check).first()
+    s_check_result = session.exec(s_check).first()
+
+    if t_check_result != None and s_check_result != None:
+        return RedirectResponse('/registration', status_code=302)
+
     if teacher_check == True:
         new = teacher(name=name, surname=surname,
-                        email=email, phone_number=phone_number, password=password)
+                      email=email, phone_number=phone_number, password=password)
         statement = select(teacher).where(teacher.email == email or teacher.phone_number == phone_number)
         result = session.exec(statement).one_or_none()
-        
+
         if result == None:
             session.add(new)
             session.commit()
-            
+
             response = RedirectResponse('/profile/teacher/' + str(new.id), status_code=302)
             response.delete_cookie('teacher_id')
             response.delete_cookie('student_id')
-            
+
             if remember == True:
                 response.set_cookie(key="teacher_id", value=str(new.id), max_age=15695000)
             return response
     else:
         statement = select(student).where(student.email == email or student.phone_number == phone_number)
         result = session.exec(statement).one_or_none()
-            
+
         new = student(name=name, surname=surname,
-                            email=email, phone_number=phone_number, password=password)
+                      email=email, phone_number=phone_number, password=password)
 
         if result == None:
             session.add(new)
             session.commit()
-                
+
             response = RedirectResponse('/profile/student/' + str(new.id), status_code=302)
             response.delete_cookie('teacher_id')
             response.delete_cookie('student_id')
