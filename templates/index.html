@@ -24,7 +24,9 @@
                 <a href="{{ url_for('get_all_teacher') }}">Главная страница</a>
             </div>
             <div style="width: 200px; display: flex; justify-content: space-around;" class="right">
+                {% if flag == False %}
                 <a href="{{ url_for('get_registration_page') }}">Регистрация</a>
+                {% endif %}
                 <a href="{{ url_for('get_login_page') }}">Профиль</a>
             </div>
         </div>
@@ -32,14 +34,9 @@
         <div style="display: flex;
         justify-content: space-between; align-items: center;" class="">
 
-            <div style="display: flex; justify-content: center;" class="who">
+<div style="display: flex; justify-content: space-around; width: 200px" class="who">
                 <h2>Я</h2>
-                <div style="display: flex;
-                align-items: center; width: 200px;
-                justify-content: space-around;" class="">
-                    <a class="btn btn-primary" href="#">Ученик</a>
-                    <a class="btn btn-outline-secondary" href="/teacher">Учитель</a>
-                </div>
+                <h2 style="color: black;">ученик</h2>
             </div>
             <div class="">
                 <a class="btn btn-primary" href="/advt">Разместить объявление</a>

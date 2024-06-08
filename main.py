@@ -1,3 +1,4 @@
+import bcrypt
 from fastapi import FastAPI, Form, status, HTTPException, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -5,6 +6,7 @@ from models import *
 from database import engine
 from sqlmodel import Session, select
 from typing import Annotated
+
 
 app = FastAPI(
     description='repetitor'
@@ -17,7 +19,16 @@ session = Session(bind=engine)
 
 @app.get('/', response_model=teacher, tags=['Pages'])
 async def get_all_teacher(request: Request):
-    
+
+    s_cookie = request.cookies.get('student_id')
+    t_cookie = request.cookies.get('teacher_id')
+
+    flag = False
+
+    if s_cookie != None or t_cookie != None:
+        flag = True
+    if t_cookie != None:
+        return RedirectResponse('/teacher', status_code=302)
     statement = select(advt).where(advt.t_id != None)
     result = session.exec(statement).all()
 
@@ -29,6 +40,7 @@ async def get_all_teacher(request: Request):
         name='index.html',
         context={
             'result': result,
+            'flag': flag
         }
     )
     
@@ -36,6 +48,12 @@ async def get_all_teacher(request: Request):
 async def get_all_students(request: Request):
     statement = select(advt).where(advt.s_id != None)
     result = session.exec(statement).all()
+
+    s_cookie = request.cookies.get('student_id')
+    t_cookie = request.cookies.get('teacher_id')
+
+    if s_cookie != None or t_cookie == None:
+        return RedirectResponse('/', status_code=302)
 
     if result == None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -183,13 +201,15 @@ async def get_profile_teacher(request: Request, teacher_id: int):
 
 @app.post('/registration', status_code=status.HTTP_201_CREATED,
           response_class=RedirectResponse, tags=['Account'])
-async def create_a_student(request=Request, name: str = Form(...),
+async def create_a_student(name: str = Form(...),
                            surname: str = Form(...),
                            email: str = Form(...),
                            phone_number: str = Form(...),
                            password: str = Form(...),
                            teacher_check: Optional[bool] = Form(default=False),
                            remember: Optional[bool] = Form(default=False)) -> RedirectResponse:
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
     t_check = select(teacher).where(teacher.email == email and teacher.phone_number == phone_number)
     s_check = select(student).where(student.email == email and student.phone_number == phone_number)
 
@@ -201,7 +221,7 @@ async def create_a_student(request=Request, name: str = Form(...),
 
     if teacher_check == True:
         new = teacher(name=name, surname=surname,
-                      email=email, phone_number=phone_number, password=password)
+                      email=email, phone_number=phone_number, password=hashed_password)
         statement = select(teacher).where(teacher.email == email or teacher.phone_number == phone_number)
         result = session.exec(statement).one_or_none()
 
@@ -221,7 +241,7 @@ async def create_a_student(request=Request, name: str = Form(...),
         result = session.exec(statement).one_or_none()
 
         new = student(name=name, surname=surname,
-                      email=email, phone_number=phone_number, password=password)
+                      email=email, phone_number=phone_number, password=hashed_password)
 
         if result == None:
             session.add(new)
@@ -239,33 +259,27 @@ async def create_a_student(request=Request, name: str = Form(...),
 
 @app.post('/login', response_class=RedirectResponse, tags=['Account'])
 async def get_student(email_login: str = Form(...),
-                   password_login: str = Form(...),
-                   remember: Optional[bool] = Form(default=False)) -> RedirectResponse:
+                      password_login: str = Form(...),
+                      remember: Optional[bool] = Form(default=False)) -> RedirectResponse:
     email_statement = select(student).where(student.email == email_login)
     email_result = session.exec(email_statement).first()
 
-    password_statement = select(student).where(student.password == password_login)
-    password_result = session.exec(password_statement).first()
+    if email_result and bcrypt.checkpw(password_login.encode('utf-8'), email_result.password.encode('utf-8')):
+        response = RedirectResponse('/profile/student/' + str(email_result.id), status_code=302)
+        if remember:
+            response.set_cookie(key="student_id", value=str(email_result.id), max_age=15695000)
+        return response
 
-    if email_result != None:
-        if email_result.id == password_result.id:
-            response = RedirectResponse('/profile/student/' + str(email_result.id), status_code=302)
-            if remember == True:
-                response.set_cookie(key="student_id", value=str(email_result.id), max_age=15695000)
-            return response
-    else:
-        email_statement = select(teacher).where(teacher.email == email_login)
-        email_result = session.exec(email_statement).first()
-        
-        password_statement = select(teacher).where(teacher.password == password_login)
-        password_result = session.exec(password_statement).first()
-        if email_result != None:
-            if email_result.id == password_result.id:
-                response = RedirectResponse('/profile/teacher/' + str(email_result.id), status_code=302)
-                if remember == True:
-                    response.set_cookie(key="teacher_id", value=str(email_result.id), max_age=15695000)
-                return response
+    email_statement = select(teacher).where(teacher.email == email_login)
+    email_result = session.exec(email_statement).first()
 
+    if email_result and bcrypt.checkpw(password_login.encode('utf-8'), email_result.password.encode('utf-8')):
+        response = RedirectResponse('/profile/teacher/' + str(email_result.id), status_code=302)
+        if remember:
+            response.set_cookie(key="teacher_id", value=str(email_result.id), max_age=15695000)
+        return response
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
 @app.get('/profile', tags=['Account'])
 async def switch_account(response: Response):
